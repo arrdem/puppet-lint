@@ -8,11 +8,11 @@ PuppetLint.new_check(:hard_tabs) do
       WHITESPACE_TYPES.include?(r.type) && r.value.include?("\t")
     }.each do |token|
       notify :error, {
-        :message => 'tab character found',
-        :line    => token.line,
-        :column  => token.column,
-        :token   => token,
-      }
+               :message => 'tab character found',
+               :line    => token.line,
+               :column  => token.column,
+               :token   => token,
+             }
     end
   end
 
@@ -31,11 +31,11 @@ PuppetLint.new_check(:trailing_whitespace) do
       token.next_token.nil? || token.next_token.type == :NEWLINE
     }.each do |token|
       notify :error, {
-        :message => 'trailing whitespace found',
-        :line    => token.line,
-        :column  => token.column,
-        :token   => token,
-      }
+               :message => 'trailing whitespace found',
+               :line    => token.line,
+               :column  => token.column,
+               :token   => token,
+             }
     end
   end
 
@@ -58,10 +58,10 @@ PuppetLint.new_check(:'80chars') do
       unless line =~ /:\/\// || line =~ /template\(/
         if line.scan(/./mu).size > 80
           notify :warning, {
-            :message => 'line has more than 80 characters',
-            :line    => idx + 1,
-            :column  => 80,
-          }
+                   :message => 'line has more than 80 characters',
+                   :line    => idx + 1,
+                   :column  => 80,
+                 }
         end
       end
     end
@@ -78,10 +78,10 @@ PuppetLint.new_check(:'2sp_soft_tabs') do
       r.value.length % 2 == 0
     }.each do |token|
       notify :error, {
-        :message => 'two-space soft tabs not used',
-        :line    => token.line,
-        :column  => token.column,
-      }
+               :message => 'two-space soft tabs not used',
+               :line    => token.line,
+               :column  => token.column,
+             }
     end
   end
 end
@@ -113,29 +113,56 @@ PuppetLint.new_check(:arrow_alignment) do
           (level_tokens[indent_depth_idx] ||= []) << token
           prev_indent_token = resource_tokens[0..idx].rindex { |t| t.type == :INDENT }
           indent_token_length = prev_indent_token.nil? ? 0 : resource_tokens[prev_indent_token].to_manifest.length
-          indent_length = indent_token_length + token.prev_code_token.to_manifest.length + 2
 
-          if indent_depth[indent_depth_idx] < indent_length
-            indent_depth[indent_depth_idx] = indent_length
+          if token.prev_code_token.type == :DQPOST
+            prev_dqpre_token_idx = resource_tokens[0..idx].rindex { |t| t.type == :DQPRE }
+            prev_dqpre_token = resource_tokens[prev_dqpre_token_idx]
+            prev_dqpost_token_idx = resource_tokens[0..idx].rindex { |t| t.type == :DQPOST }
+            prev_dqpost_token = resource_tokens[prev_dqpost_token_idx]
+
+            total_token_width = 0
+
+            (prev_dqpre_token_idx..prev_dqpost_token_idx).each do |idx|
+              token = resource_tokens[idx]
+              length = 0
+              if token.type == :VARIABLE
+                length = token.value.length + 3
+              elsif token.type == :DQPRE || token.type == :DQPOST
+                length = token.value.length
+              else
+                length = token.value.length
+              end
+              puts "#{token.inspect()}, #{length}"
+              total_token_width += length
+            end
+
+            indent_length = total_token_width + 2
+
+            puts "#{prev_dqpre_token.inspect()} #{prev_dqpost_token.inspect()} #{total_token_width} #{indent_token_length} #{indent_length}"
+          else
+            indent_length = indent_token_length + token.prev_code_token.to_manifest.length + 2
           end
+
+          indent_depth[indent_depth_idx] = indent_length
 
         elsif token.type == :LBRACE
           indent_depth_idx += 1
           indent_depth << 0
           level_tokens[indent_depth_idx] ||= []
+
         elsif token.type == :RBRACE
           level_tokens[indent_depth_idx].each do |arrow_tok|
             unless arrow_tok.column == indent_depth[indent_depth_idx] || level_tokens[indent_depth_idx].size == 1
               arrows_on_line = level_tokens[indent_depth_idx].select { |t| t.line == arrow_tok.line }
               notify :warning, {
-                :message        => 'indentation of => is not properly aligned',
-                :line           => arrow_tok.line,
-                :column         => arrow_tok.column,
-                :token          => arrow_tok,
-                :indent_depth   => indent_depth[indent_depth_idx],
-                :newline        => !(arrows_on_line.index(arrow_tok) == 0),
-                :newline_indent => arrows_on_line.first.prev_code_token.prev_token.value,
-              }
+                       :message        => "indentation of => is not properly aligned (#{indent_depth[indent_depth_idx]})",
+                       :line           => arrow_tok.line,
+                       :column         => arrow_tok.column,
+                       :token          => arrow_tok,
+                       :indent_depth   => indent_depth[indent_depth_idx],
+                       :newline        => !(arrows_on_line.index(arrow_tok) == 0),
+                       :newline_indent => arrows_on_line.first.prev_code_token.prev_token.value,
+                     }
             end
           end
           indent_depth[indent_depth_idx] = 0
@@ -147,7 +174,7 @@ PuppetLint.new_check(:arrow_alignment) do
   end
 
   def fix(problem)
-    new_ws_len = (problem[:indent_depth] - (problem[:newline_indent].length + problem[:token].prev_code_token.to_manifest.length + 1))
+    new_ws_len = (problem[:indent_depth] - (problem[:token].prev_code_token.value.length + problem[:token].prev_code_token.column))
     new_ws = ' ' * new_ws_len
     if problem[:newline]
       index = tokens.index(problem[:token].prev_code_token.prev_token)
